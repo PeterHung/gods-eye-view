@@ -62,6 +62,23 @@ never|尚未更新
 just now|剛剛
 NO DATA|沒有資料
 PROVIDER SETTINGS|設定服務
+Administrator password|管理密碼
+Paste administrator password|貼上管理密碼
+UNLOCK SETTINGS|解鎖設定
+LOCK SETTINGS|鎖定設定
+RELOAD PAGE|重新載入網頁
+Enter the administrator password to edit this server’s API keys.|輸入管理密碼，即可編輯此伺服器的 API 金鑰。
+Use the password generated on the hosting server. Closing this panel locks it again.|請使用部署主機產生的管理密碼；關閉面板後會再次鎖定。
+Paste API keys below, then save. Server keys are stored on this server. Google Maps and Cesium ion keys run in the browser; restrict them at the provider.|在下方貼上 API 金鑰後儲存。服務端金鑰保存在此伺服器；Google Maps 與 Cesium ion 金鑰會在瀏覽器使用，請在供應商端限制用途。
+Existing keys are never displayed. Leave a field blank to keep its saved value.|已儲存的金鑰不會顯示；欄位留空即可保留原值。
+Enter the administrator password first.|請先輸入管理密碼。
+Unlocking…|解鎖中…
+Incorrect administrator password. Try again.|管理密碼不正確，請重新輸入。
+Unlock settings with the administrator password.|請使用管理密碼解鎖設定。
+Cannot reach the settings service. Check the deployment and try again.|無法連線到設定服務，請確認部署後重試。
+Saved on the server. Reload the page to apply changes.|已儲存至伺服器。請重新載入網頁以套用變更。
+Browser key editing is not enabled on this server. Run the hosted-settings setup command on the deployment host, restart its Node service, then reload this page.|此伺服器尚未啟用網頁金鑰編輯。請先在部署主機執行啟用指令，重新啟動 Node 服務後，再重新整理此頁。
+From the repository folder: node source/scripts/enable-hosted-settings.mjs https://your-site.example/gods-eye/ . Use your own deployment URL. Static hosting cannot save server keys.|在儲存庫目錄執行：node source/scripts/enable-hosted-settings.mjs https://your-site.example/gods-eye/ ，請換成實際部署網址。純靜態網站無法儲存服務端金鑰。
 This deployment does not provide browser-based key editing. Ask the site administrator to configure the environment variables below on the hosting server. This page cannot verify whether those keys are configured.|此部署未提供網頁金鑰編輯功能。請由網站管理者在主機設定下列環境變數；此頁無法確認金鑰是否已設定。
 Server keys require a backend. Google Maps and Cesium ion keys are included at build time; rebuild and redeploy after changing them. To edit keys on your own computer, use the local deployment script.|服務端金鑰需要後端服務。Google Maps 與 Cesium ion 金鑰會在建置時加入，變更後請重新建置並部署。如需在自己的電腦編輯金鑰，請使用本機部署腳本。
 POWER UP|設定服務

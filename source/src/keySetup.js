@@ -2,8 +2,8 @@ import { createSurfaceKeyboard } from './ui/surfaceKeyboard.js';
 import { KEY_SETUP_KEYS } from './keySetupCore.mjs';
 
 /** Provider Settings stays reachable in local and deployed builds.
- * Loopback dev servers allow editing. Other deployments show setup guidance
- * without collecting credentials or enabling the local write endpoint.
+ * Local servers allow editing; opted-in hosted servers require admin unlock.
+ * Missing backends retain actionable setup guidance.
  */
 export function setupApiUrl(baseUrl, route) {
   return new URL(`./api/setup/${route}`, baseUrl).href;
@@ -22,13 +22,14 @@ export function readOnlyKeySetupStatus() {
 }
 
 const DEPLOYED_DESCRIPTION =
-  'This deployment does not provide browser-based key editing. Ask the site administrator to configure the environment variables below on the hosting server. This page cannot verify whether those keys are configured.';
+  'Browser key editing is not enabled on this server. Run the hosted-settings setup command on the deployment host, restart its Node service, then reload this page.';
 const DEPLOYED_NOTE =
-  'Server keys require a backend. Google Maps and Cesium ion keys are included at build time; rebuild and redeploy after changing them. To edit keys on your own computer, use the local deployment script.';
+  'From the repository folder: node source/scripts/enable-hosted-settings.mjs https://your-site.example/gods-eye/ . Use your own deployment URL. Static hosting cannot save server keys.';
 
 /** Chip label — pure, exported for tests. */
 export function keySetupChipLabel(status) {
-  if (status?.mode === 'read-only') return 'PROVIDER SETTINGS';
+  if (['read-only', 'locked'].includes(status?.mode))
+    return 'PROVIDER SETTINGS';
   const missing = Math.max(0, (status?.total || 0) - (status?.setCount || 0));
   return missing > 0
     ? `POWER UP · ${missing} ${missing === 1 ? 'KEY' : 'KEYS'} WAITING`
@@ -178,10 +179,14 @@ export async function initKeySetup({
   root.dataset.initialized = 'true';
   const lifetime = new AbortController();
   let disposed = false;
+  let adminToken = '';
+  let unlockVersion = 0;
   let disposeControls = () => {};
   const destroy = () => {
     if (disposed) return;
     disposed = true;
+    adminToken = '';
+    unlockVersion += 1;
     lifetime.abort();
     signal?.removeEventListener('abort', destroy);
     disposeControls();
@@ -199,57 +204,93 @@ export async function initKeySetup({
     documentRef.baseURI || globalThis.location?.href || 'http://localhost/';
   const statusUrl = setupApiUrl(baseUrl, 'status');
   const keysUrl = setupApiUrl(baseUrl, 'keys');
-  let status = null;
-  const request = new AbortController();
-  const abortRequest = () => request.abort();
-  lifetime.signal.addEventListener('abort', abortRequest, { once: true });
-  const timeout = globalThis.setTimeout(() => request.abort(), 5000);
+  const authHeaders = () =>
+    adminToken ? { 'X-GEV-Settings-Token': adminToken } : {};
+  const fetchStatus = async () => {
+    const request = new AbortController();
+    const abortRequest = () => request.abort();
+    lifetime.signal.addEventListener('abort', abortRequest, { once: true });
+    const timeout = globalThis.setTimeout(() => request.abort(), 5000);
+    try {
+      const response = await doFetch(statusUrl, {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        redirect: 'error',
+        referrerPolicy: 'same-origin',
+        headers: authHeaders(),
+        signal: request.signal,
+      });
+      const payload = await response.json();
+      if (response.status === 401 && payload.mode === 'locked')
+        return { ...readOnlyKeySetupStatus(), mode: 'locked' };
+      if (
+        !response.ok ||
+        !Array.isArray(payload?.keys) ||
+        !Number.isInteger(payload.total) ||
+        !Number.isInteger(payload.setCount)
+      )
+        throw new Error('Settings API unavailable');
+      return payload;
+    } finally {
+      globalThis.clearTimeout(timeout);
+      lifetime.signal.removeEventListener('abort', abortRequest);
+    }
+  };
+  let status;
   try {
-    const response = await doFetch(statusUrl, {
-      cache: 'no-store',
-      signal: request.signal,
-    });
-    if (!response.ok) throw new Error(String(response.status));
-    status = await response.json();
-    if (disposed) return null;
-    if (
-      !Array.isArray(status?.keys) ||
-      !Number.isInteger(status.total) ||
-      !Number.isInteger(status.setCount)
-    )
-      throw new Error('Invalid setup status');
+    status = await fetchStatus();
   } catch {
-    if (disposed) return null;
-    // A missing API, login response, denied request or offline service must
-    // not silently remove the entry point or imply that no keys are set.
     status = readOnlyKeySetupStatus();
-  } finally {
-    globalThis.clearTimeout(timeout);
-    lifetime.signal.removeEventListener('abort', abortRequest);
   }
+  if (disposed) return null;
 
   const rowsHost = root.querySelector('[data-key-setup-rows]');
   const applyButton = root.querySelector('[data-key-setup-apply]');
   const closeButton = root.querySelector('[data-key-setup-close]');
   const chipLabel = chip.querySelector('[data-key-setup-chip-label]') || chip;
   const statusLine = root.querySelector('[data-key-setup-status]');
-  const readOnly = status.mode === 'read-only';
-  if (readOnly) {
-    const description = root.querySelector('#key-setup-description');
-    if (description) description.textContent = DEPLOYED_DESCRIPTION;
-    if (statusLine) statusLine.textContent = DEPLOYED_NOTE;
-    if (applyButton) {
-      applyButton.hidden = true;
-      applyButton.disabled = true;
-    }
-  }
-  const defaultStatusText = statusLine?.textContent || '';
+  const description = root.querySelector('#key-setup-description');
+  const unlockForm = root.querySelector('[data-key-setup-unlock]');
+  const passwordInput = root.querySelector('[data-key-setup-password]');
+  const unlockButton = root.querySelector('[data-key-setup-unlock-button]');
+  const lockButton = root.querySelector('[data-key-setup-lock]');
+  const reloadButton = root.querySelector('[data-key-setup-reload]');
+  const localDescription = description?.textContent || '';
+  const localNote = statusLine?.textContent || '';
+  let defaultStatusText = localNote;
+  let readOnly = true;
   let busy = false;
   let open = false;
 
   const render = (nextStatus) => {
     if (disposed) return;
     status = nextStatus;
+    const locked = status.mode === 'locked';
+    const hosted = status.mode === 'hosted';
+    readOnly = locked || status.mode === 'read-only';
+    if (description)
+      description.textContent = locked
+        ? 'Enter the administrator password to edit this server’s API keys.'
+        : hosted
+          ? 'Paste API keys below, then save. Server keys are stored on this server. Google Maps and Cesium ion keys run in the browser; restrict them at the provider.'
+          : readOnly
+            ? DEPLOYED_DESCRIPTION
+            : localDescription;
+    defaultStatusText = locked
+      ? 'Use the password generated on the hosting server. Closing this panel locks it again.'
+      : hosted
+        ? 'Existing keys are never displayed. Leave a field blank to keep its saved value.'
+        : readOnly
+          ? DEPLOYED_NOTE
+          : localNote;
+    if (statusLine) statusLine.textContent = defaultStatusText;
+    if (unlockForm) unlockForm.hidden = !locked;
+    if (lockButton) lockButton.hidden = !hosted;
+    if (reloadButton) reloadButton.hidden = true;
+    if (applyButton) {
+      applyButton.hidden = readOnly;
+      applyButton.disabled = readOnly;
+    }
     chipLabel.textContent = keySetupChipLabel(status);
     // Keep settings discoverable even when all local keys are configured.
     chip.hidden = false;
@@ -279,7 +320,10 @@ export async function initKeySetup({
     globalThis.requestAnimationFrame?.(() => {
       if (!open) return;
       root.classList.add('visible');
-      (root.querySelector('input') || closeButton)?.focus?.({
+      (status.mode === 'locked'
+        ? passwordInput
+        : root.querySelector('input[data-env-var]') || closeButton
+      )?.focus?.({
         preventScroll: true,
       });
     });
@@ -288,6 +332,8 @@ export async function initKeySetup({
   const close = () => {
     if (!open) return;
     open = false;
+    lock();
+    for (const input of root.querySelectorAll('input')) input.value = '';
     root.classList.remove('visible');
     const hide = () => {
       if (!open) root.hidden = true;
@@ -303,9 +349,11 @@ export async function initKeySetup({
   };
 
   const storeLabel = () =>
-    status?.store === 'pinokio-environment'
-      ? 'your app configuration'
-      : 'your local .env';
+    status?.mode === 'hosted'
+      ? 'the server configuration'
+      : status?.store === 'pinokio-environment'
+        ? 'your app configuration'
+        : 'your local .env';
 
   const submitUpdates = async (updates, doneVerb) => {
     if (disposed || busy || readOnly) return;
@@ -319,18 +367,22 @@ export async function initKeySetup({
       const response = await doFetch(keysUrl, {
         method: 'POST',
         signal: lifetime.signal,
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        redirect: 'error',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(updates),
       });
       const payload = await response.json().catch(() => ({}));
       if (disposed) return;
       if (!response.ok || !payload.ok) {
+        if (response.status === 401) lock();
         say(payload.error || `Save failed (${response.status}).`);
         return;
       }
       for (const input of root.querySelectorAll('input[data-env-var]'))
         input.value = '';
-      render(payload.status);
+      if (payload.status.mode !== 'hosted' || adminToken)
+        render(payload.status);
       if (googleWasUnset && payload.saved?.includes('GOOGLE_MAPS_API_KEY')) {
         const strip = () => {
           try {
@@ -352,8 +404,11 @@ export async function initKeySetup({
         });
       }
       say(
-        `${doneVerb} ${storeLabel()}. Restarting — this page reloads itself.`,
+        status.mode === 'hosted' || status.mode === 'locked'
+          ? 'Saved on the server. Reload the page to apply changes.'
+          : `${doneVerb} ${storeLabel()}. Restarting — this page reloads itself.`,
       );
+      if (reloadButton) reloadButton.hidden = false;
     } catch (error) {
       say(`Save failed: ${error?.message || error}`);
     } finally {
@@ -377,6 +432,53 @@ export async function initKeySetup({
     }
     await submitUpdates(updates, 'Saved to');
   };
+
+  const lock = () => {
+    adminToken = '';
+    unlockVersion += 1;
+    if (passwordInput) passwordInput.value = '';
+    if (status.mode === 'hosted')
+      render({ ...readOnlyKeySetupStatus(), mode: 'locked' });
+  };
+  const onUnlock = async (event) => {
+    event.preventDefault();
+    if (busy || disposed) return;
+    adminToken = String(passwordInput?.value || '').trim();
+    if (!adminToken) {
+      say('Enter the administrator password first.');
+      return;
+    }
+    if (passwordInput) passwordInput.value = '';
+    const attempt = ++unlockVersion;
+    busy = true;
+    if (unlockButton) unlockButton.disabled = true;
+    say('Unlocking…');
+    try {
+      const nextStatus = await fetchStatus();
+      if (disposed || attempt !== unlockVersion) return;
+      if (nextStatus.mode !== 'hosted') {
+        adminToken = '';
+        say('Incorrect administrator password. Try again.');
+        passwordInput?.focus?.();
+        return;
+      }
+      render(nextStatus);
+      root.querySelector('input[data-env-var]')?.focus?.();
+    } catch {
+      adminToken = '';
+      if (!disposed && attempt === unlockVersion)
+        say(
+          'Cannot reach the settings service. Check the deployment and try again.',
+        );
+    } finally {
+      busy = false;
+      if (unlockButton) unlockButton.disabled = false;
+    }
+  };
+  const reload = () => globalThis.location?.reload?.();
+  unlockForm?.addEventListener('submit', onUnlock);
+  lockButton?.addEventListener('click', lock);
+  reloadButton?.addEventListener('click', reload);
 
   chip.addEventListener('click', openDialog);
   closeButton?.addEventListener('click', close);
@@ -424,6 +526,9 @@ export async function initKeySetup({
     chip.removeEventListener('click', openDialog);
     closeButton?.removeEventListener('click', close);
     applyButton?.removeEventListener('click', onApply);
+    unlockForm?.removeEventListener('submit', onUnlock);
+    lockButton?.removeEventListener('click', lock);
+    reloadButton?.removeEventListener('click', reload);
   };
   return { open: openDialog, close, render, destroy };
 }

@@ -402,3 +402,26 @@ body.scene-playback-mode #key-setup {
   font-size: 0.7rem;
   overflow-wrap: anywhere;
 }
+
+.key-setup-unlock {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(54, 220, 255, 0.38);
+  border-radius: 0.42rem;
+}
+.key-setup-unlock label {
+  font-size: 0.75rem;
+  color: rgba(225, 244, 248, 0.92);
+}
+.key-setup-unlock .key-setup-apply {
+  justify-self: start;
+}
+.key-setup-unlock[hidden],
+.key-setup-remove[hidden] {
+  display: none;
+}
+.key-setup-footer {
+  flex-wrap: wrap;
+}

@@ -118,6 +118,13 @@ function setupDocument() {
     append(...nodes) {
       this.children.push(...nodes);
     }
+    set textContent(value) {
+      this.text = value;
+      this.children = [];
+    }
+    get textContent() {
+      return this.text || '';
+    }
     setAttribute() {}
     remove() {
       this.removed = true;
@@ -133,6 +140,11 @@ function setupDocument() {
       'label',
       'status',
       'description',
+      'unlock',
+      'password',
+      'unlockButton',
+      'lock',
+      'reload',
     ].map((name) => [name, new Element()]),
   );
   nodes.chip.querySelector = () => nodes.label;
@@ -143,7 +155,16 @@ function setupDocument() {
       '[data-key-setup-close]': nodes.close,
       '[data-key-setup-status]': nodes.status,
       '#key-setup-description': nodes.description,
+      '[data-key-setup-unlock]': nodes.unlock,
+      '[data-key-setup-password]': nodes.password,
+      '[data-key-setup-unlock-button]': nodes.unlockButton,
+      '[data-key-setup-lock]': nodes.lock,
+      '[data-key-setup-reload]': nodes.reload,
     })[selector] || null;
+  const descendants = (node) =>
+    node.children.flatMap((child) => [child, ...descendants(child)]);
+  nodes.root.querySelectorAll = () =>
+    descendants(nodes.rows).filter((node) => node.tag === 'input');
   const documentRef = {
     baseURI: 'https://example.test/gods-eye/',
     getElementById: (id) => (id === 'key-setup-chip' ? nodes.chip : nodes.root),
@@ -216,5 +237,69 @@ test('fully configured local installations retain the settings entry', async () 
   assert.equal(fixture.nodes.chip.hidden, false);
   assert.equal(fixture.nodes.label.textContent, 'POWERED UP');
   assert.notEqual(fixture.nodes.apply.disabled, true);
+  controller.destroy();
+});
+
+test('hosted panel unlocks, saves via app-relative API, clears secrets and locks again', async () => {
+  const { initKeySetup } = await import('./keySetup.js');
+  const { keySetupStatus } = await import('./keySetupCore.mjs');
+  const fixture = setupDocument();
+  const requests = [];
+  const hosted = { ...keySetupStatus({}), mode: 'hosted' };
+  const controller = await initKeySetup({
+    documentRef: fixture.documentRef,
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      if (options.headers?.['X-GEV-Settings-Token'] !== 'fixture-admin')
+        return Response.json({ mode: 'locked' }, { status: 401 });
+      if (options.method === 'POST')
+        return Response.json({
+          ok: true,
+          saved: ['OPENAI_API_KEY'],
+          status: hosted,
+        });
+      return Response.json(hosted);
+    },
+  });
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  assert.equal(fixture.nodes.unlock.hidden, false);
+  assert.equal(fixture.nodes.apply.hidden, true);
+  fixture.nodes.password.value = 'wrong';
+  fixture.nodes.unlock.dispatchEvent(new Event('submit', { cancelable: true }));
+  await flush();
+  assert.match(fixture.nodes.status.textContent, /Incorrect administrator/);
+  assert.equal(fixture.nodes.password.value, '');
+  fixture.nodes.password.value = 'fixture-admin';
+  fixture.nodes.unlock.dispatchEvent(new Event('submit', { cancelable: true }));
+  await flush();
+  assert.equal(fixture.nodes.unlock.hidden, true);
+  assert.equal(fixture.nodes.apply.hidden, false);
+  const inputs = fixture.nodes.root.querySelectorAll('input');
+  assert.equal(inputs.length, 9);
+  inputs.find((input) => input.dataset.envVar === 'OPENAI_API_KEY').value =
+    'fixture-new-key';
+  fixture.nodes.apply.dispatchEvent(new Event('click'));
+  await flush();
+  const saved = requests.at(-1);
+  assert.equal(saved.url, 'https://example.test/gods-eye/api/setup/keys');
+  assert.equal(saved.options.redirect, 'error');
+  assert.deepEqual(JSON.parse(saved.options.body), {
+    OPENAI_API_KEY: 'fixture-new-key',
+  });
+  assert.equal(saved.options.headers['X-GEV-Settings-Token'], 'fixture-admin');
+  assert.equal(
+    inputs.every((input) => !input.value),
+    true,
+  );
+  assert.match(fixture.nodes.status.textContent, /Saved on the server/);
+  assert.equal(fixture.nodes.reload.hidden, false);
+  fixture.nodes.lock.dispatchEvent(new Event('click'));
+  assert.equal(fixture.nodes.unlock.hidden, false);
+  assert.equal(fixture.nodes.apply.hidden, true);
+  assert.equal(fixture.nodes.root.querySelectorAll('input').length, 0);
+  const count = requests.length;
+  fixture.nodes.apply.dispatchEvent(new Event('click'));
+  await flush();
+  assert.equal(requests.length, count);
   controller.destroy();
 });

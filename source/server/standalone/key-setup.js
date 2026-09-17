@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import { parseEnv as parseDotenvText } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { hardenCredentialFile } from './key-setup-hardening.mjs';
+import { admitHostedKeySetup } from './key-setup-auth.mjs';
 
 /**
  * Which launcher started this process, captured at MODULE LOAD — before the
@@ -65,10 +66,9 @@ const DEV_FRESH_EXTERNAL_KEYS_AT_BOOT = new Set(
  *   reloads itself. Pasting a key in the app IS the whole setup — no
  *   hand-edited env files.
  *
- * Loopback-only on purpose: with HOST=0.0.0.0 the app can be shared on a LAN,
- * and a guest must be able to neither write the host's .env nor probe which
- * keys exist. Prod builds never register this middleware (apply: 'serve'), so
- * the panel's status fetch fails and the client removes the whole surface.
+ * Local requests retain the original loopback gate. Hosted editing is an
+ * explicit opt-in, protected by a random administrator password and an exact
+ * HTTPS origin. Static builds and preview do not install credential writers.
  */
 function keySetupEndpoint({ sourceRoot = defaultSourceRoot } = {}) {
   const respond = (res, statusCode, payload) => {
@@ -135,6 +135,7 @@ function keySetupEndpoint({ sourceRoot = defaultSourceRoot } = {}) {
   // The gate itself is pure and unit-tested (admitKeySetupRequest in
   // src/keySetupCore.mjs) — this just feeds it the request.
   const admit = (req) =>
+    admitHostedKeySetup(req, process.env) ??
     admitKeySetupRequest({
       method: req.method,
       remoteAddress: req.socket?.remoteAddress,
@@ -160,7 +161,7 @@ function keySetupEndpoint({ sourceRoot = defaultSourceRoot } = {}) {
       wasExternalAtBoot,
     });
   };
-  const providerStatus = () => {
+  const providerStatus = (mode) => {
     const inStore = storeValues();
     const status = keySetupStatus(process.env);
     for (const key of status.keys) {
@@ -173,7 +174,7 @@ function keySetupEndpoint({ sourceRoot = defaultSourceRoot } = {}) {
           : 'file'
         : null;
     }
-    return { ...status, store: storeName() };
+    return { ...status, store: storeName(), ...(mode ? { mode } : {}) };
   };
   // Atomically replace the store's content: fresh same-dir temp created 0600
   // with the exclusive flag, fsync, rename over the target. Closes the window
@@ -250,15 +251,21 @@ function keySetupEndpoint({ sourceRoot = defaultSourceRoot } = {}) {
           return respond(res, 405, { error: 'Method not allowed' });
         const admission = admit(req);
         if (!admission.ok)
-          return respond(res, admission.status, { error: admission.error });
-        respond(res, 200, providerStatus());
+          return respond(res, admission.status, {
+            error: admission.error,
+            ...(admission.mode ? { mode: admission.mode } : {}),
+          });
+        respond(res, 200, providerStatus(admission.mode));
       });
       server.middlewares.use('/api/setup/keys', (req, res) => {
         if (req.method !== 'POST')
           return respond(res, 405, { error: 'Method not allowed' });
         const admission = admit(req);
         if (!admission.ok)
-          return respond(res, admission.status, { error: admission.error });
+          return respond(res, admission.status, {
+            error: admission.error,
+            ...(admission.mode ? { mode: admission.mode } : {}),
+          });
         let body = '';
         let overflowed = false;
         req.on('data', (chunk) => {
@@ -322,7 +329,7 @@ function keySetupEndpoint({ sourceRoot = defaultSourceRoot } = {}) {
           respond(res, 200, {
             ok: true,
             saved: Object.keys(verdict.updates),
-            status: providerStatus(),
+            status: providerStatus(admission.mode),
             restarting: true,
           });
           // One deliberate restart, after the response has flushed. Vite's own
