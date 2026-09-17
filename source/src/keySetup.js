@@ -168,11 +168,72 @@ function buildRow(documentRef, key, readOnly = false) {
  * Wire the chip + dialog. Fire-and-forget from main.js; resolves to null when
  * the application was disposed or the required markup is absent.
  */
+function ensureKeySetupMarkup(documentRef) {
+  if (!documentRef?.getElementById || !documentRef.createElement) return;
+  let chip = documentRef.getElementById('key-setup-chip');
+  let root = documentRef.getElementById('key-setup');
+  const body = documentRef.body;
+  if (!body) return { chip, root };
+  if (!chip) {
+    chip = documentRef.createElement('button');
+    chip.id = 'key-setup-chip';
+    chip.type = 'button';
+    chip.hidden = true;
+    chip.setAttribute('aria-haspopup', 'dialog');
+    chip.setAttribute('aria-controls', 'key-setup');
+    const icon = documentRef.createElement('span');
+    icon.className = 'material-symbols-outlined';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = 'bolt';
+    const label = documentRef.createElement('span');
+    label.dataset.keySetupChipLabel = '';
+    label.textContent = 'POWER UP';
+    chip.append(icon, label);
+    body.append(chip);
+  }
+  if (!root) {
+    root = documentRef.createElement('aside');
+    root.id = 'key-setup';
+    root.setAttribute('role', 'dialog');
+    root.setAttribute('aria-labelledby', 'key-setup-title');
+    root.setAttribute('aria-describedby', 'key-setup-description');
+    root.hidden = true;
+    root.innerHTML = `
+      <div class="key-setup-scanline" aria-hidden="true"></div>
+      <header class="key-setup-header">
+        <span class="key-setup-kicker">GROUND STATION · PROVIDER SETTINGS</span>
+        <button type="button" class="key-setup-close" data-key-setup-close aria-label="Close key setup">
+          <span class="material-symbols-outlined" aria-hidden="true">close</span>
+        </button>
+      </header>
+      <h2 id="key-setup-title">Power up the globe</h2>
+      <p id="key-setup-description">The globe already flies keyless. Every key below switches on another real feed — paste one and it's saved into this app's local configuration, then the server restarts itself. Server-side keys stay on this machine; Google Maps and Cesium ion run in the browser and must be provider-restricted. Keys you configured elsewhere are shown but never touched.</p>
+      <form class="key-setup-unlock" data-key-setup-unlock hidden>
+        <label for="key-setup-password">Administrator password</label>
+        <div class="key-setup-fields">
+          <input id="key-setup-password" data-key-setup-password type="password" autocomplete="off" spellcheck="false" required placeholder="Paste administrator password">
+        </div>
+        <button class="key-setup-apply" data-key-setup-unlock-button type="submit">UNLOCK SETTINGS</button>
+      </form>
+      <div class="key-setup-rows" data-key-setup-rows></div>
+      <div class="key-setup-footer">
+        <button type="button" class="key-setup-apply" data-key-setup-apply>SAVE KEYS</button>
+        <button type="button" class="key-setup-remove" data-key-setup-lock hidden>LOCK SETTINGS</button>
+        <button type="button" class="key-setup-apply" data-key-setup-reload hidden>RELOAD PAGE</button>
+        <span class="key-setup-hint">ESC to close</span>
+      </div>
+      <p class="key-setup-note" data-key-setup-status role="status" aria-live="polite">The Google Maps key buys the photorealistic planet — everything else stacks on top.</p>`;
+    body.append(root);
+  }
+  return { chip, root };
+}
+
 export async function initKeySetup({
   documentRef = globalThis.document,
   fetchImpl,
   signal,
 } = {}) {
+  ensureKeySetupMarkup(documentRef);
   const chip = documentRef?.getElementById?.('key-setup-chip');
   const root = documentRef?.getElementById?.('key-setup');
   if (!chip || !root || root.dataset.initialized === 'true') return null;
@@ -182,7 +243,12 @@ export async function initKeySetup({
   let adminToken = '';
   let unlockVersion = 0;
   let disposeControls = () => {};
-  const destroy = () => {
+  const hideDialog = () => {
+    if (!root) return;
+    root.hidden = true;
+    root.classList?.remove?.('visible');
+  };
+  const destroy = ({ remove = false } = {}) => {
     if (disposed) return;
     disposed = true;
     adminToken = '';
@@ -190,8 +256,13 @@ export async function initKeySetup({
     lifetime.abort();
     signal?.removeEventListener('abort', destroy);
     disposeControls();
-    chip.remove();
-    root.remove();
+    delete root?.dataset?.initialized;
+    hideDialog();
+    if (chip) chip.hidden = false;
+    if (remove) {
+      chip?.remove?.();
+      root?.remove?.();
+    }
   };
   if (signal?.aborted) {
     destroy();
@@ -215,12 +286,11 @@ export async function initKeySetup({
       const response = await doFetch(statusUrl, {
         cache: 'no-store',
         credentials: 'same-origin',
-        redirect: 'error',
         referrerPolicy: 'same-origin',
         headers: authHeaders(),
         signal: request.signal,
       });
-      const payload = await response.json();
+      const payload = await response.json().catch(() => ({}));
       if (response.status === 401 && payload.mode === 'locked')
         return { ...readOnlyKeySetupStatus(), mode: 'locked' };
       if (
@@ -242,7 +312,10 @@ export async function initKeySetup({
   } catch {
     status = readOnlyKeySetupStatus();
   }
-  if (disposed) return null;
+  if (disposed) {
+    if (chip) chip.hidden = false;
+    return null;
+  }
 
   const rowsHost = root.querySelector('[data-key-setup-rows]');
   const applyButton = root.querySelector('[data-key-setup-apply]');

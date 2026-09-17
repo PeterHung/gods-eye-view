@@ -56,17 +56,35 @@ test('the first Google key strips ONLY the keyless OSM basemap from the share ha
   assert.equal(stripKeylessBasemapFromHash(undefined), null);
 });
 
-test('aborting pending setup removes its surface and ignores a late response', async () => {
+test('aborting pending setup hides its surface and ignores a late response', async () => {
   const { initKeySetup } = await import('./keySetup.js');
   const removed = [];
-  const chip = { remove: () => removed.push('chip') };
-  const root = { dataset: {}, remove: () => removed.push('root') };
+  const chip = {
+    hidden: true,
+    querySelector: () => null,
+    addEventListener() {},
+    removeEventListener() {},
+    remove: () => removed.push('chip'),
+  };
+  const root = {
+    dataset: {},
+    hidden: true,
+    classList: { add() {}, remove() {}, contains: () => false },
+    querySelector: () => null,
+    addEventListener() {},
+    removeEventListener() {},
+    getClientRects: () => [],
+    isConnected: true,
+    remove: () => removed.push('root'),
+  };
   let resolveResponse;
   let requestSignal;
   const controller = new AbortController();
   const pending = initKeySetup({
     documentRef: {
+      body: { append() {} },
       getElementById: (id) => (id === 'key-setup-chip' ? chip : root),
+      createElement: () => ({ dataset: {}, setAttribute() {}, append() {} }),
     },
     signal: controller.signal,
     fetchImpl: (_url, { signal }) => {
@@ -78,7 +96,8 @@ test('aborting pending setup removes its surface and ignores a late response', a
   });
   controller.abort();
   assert.equal(requestSignal.aborted, true);
-  assert.deepEqual(removed, ['chip', 'root']);
+  assert.equal(chip.hidden, false);
+  assert.deepEqual(removed, []);
   resolveResponse({ ok: true, json: async () => ({ keys: [] }) });
   assert.equal(await pending, null);
 });
@@ -126,6 +145,13 @@ function setupDocument() {
       return this.text || '';
     }
     setAttribute() {}
+    classList = {
+      add() {},
+      remove() {},
+      contains() {
+        return false;
+      },
+    };
     remove() {
       this.removed = true;
     }
@@ -301,5 +327,98 @@ test('hosted panel unlocks, saves via app-relative API, clears secrets and locks
   fixture.nodes.apply.dispatchEvent(new Event('click'));
   await flush();
   assert.equal(requests.length, count);
+  controller.destroy();
+});
+
+test('creates settings markup when the template is missing from the document', async () => {
+  const { initKeySetup } = await import('./keySetup.js');
+  const created = [];
+  const body = {
+    children: [],
+    append(...nodes) {
+      this.children.push(...nodes);
+    },
+  };
+  class Element {
+    constructor(tag) {
+      this.tag = tag;
+      this.dataset = {};
+      this.children = [];
+      this.hidden = true;
+      this.classList = { add() {}, remove() {}, contains: () => false };
+    }
+    setAttribute() {}
+    append(...nodes) {
+      this.children.push(...nodes);
+    }
+    querySelector(selector) {
+      const map = {
+        '[data-key-setup-rows]': this.rows,
+        '[data-key-setup-apply]': this.apply,
+        '[data-key-setup-close]': this.close,
+        '[data-key-setup-status]': this.status,
+        '#key-setup-description': this.description,
+        '[data-key-setup-unlock]': this.unlock,
+        '[data-key-setup-password]': this.password,
+        '[data-key-setup-unlock-button]': this.unlockButton,
+        '[data-key-setup-lock]': this.lock,
+        '[data-key-setup-reload]': this.reload,
+        '[data-key-setup-chip-label]': this.label,
+      };
+      return map[selector] || null;
+    }
+    querySelectorAll() {
+      return [];
+    }
+    addEventListener() {}
+    removeEventListener() {}
+    getClientRects() {
+      return [];
+    }
+    remove() {}
+  }
+  const nodes = {};
+  const documentRef = {
+    body,
+    getElementById: (id) => nodes[id] || null,
+    createElement: (tag) => {
+      const el = new Element(tag);
+      created.push(el);
+      if (tag === 'button' && !nodes['key-setup-chip']) {
+        nodes['key-setup-chip'] = el;
+        el.label = new Element('span');
+        el.querySelector = () => el.label;
+      }
+      if (tag === 'aside') {
+        nodes['key-setup'] = el;
+        for (const name of [
+          'rows',
+          'apply',
+          'close',
+          'status',
+          'description',
+          'unlock',
+          'password',
+          'unlockButton',
+          'lock',
+          'reload',
+        ]) {
+          el[name] = new Element('div');
+        }
+      }
+      return el;
+    },
+    baseURI: 'https://example.test/gods-eye/',
+  };
+  const controller = await initKeySetup({
+    documentRef,
+    fetchImpl: async () => {
+      throw new Error('offline');
+    },
+  });
+  assert.equal(Boolean(nodes['key-setup-chip']), true);
+  assert.equal(Boolean(nodes['key-setup']), true);
+  assert.equal(nodes['key-setup-chip'].hidden, false);
+  assert.equal(nodes['key-setup-chip'].label.textContent, 'PROVIDER SETTINGS');
   controller.destroy();
 });
