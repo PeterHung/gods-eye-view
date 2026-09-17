@@ -1,5 +1,9 @@
+import { installInterfaceLanguage } from './i18n/interfaceLanguage.js';
 import { createStandaloneApplication } from './standalone/application.js';
 import { describeError } from './standalone/errors.js';
+
+const interfaceLanguage = installInterfaceLanguage();
+if (import.meta.hot) import.meta.hot.dispose(() => interfaceLanguage.destroy());
 
 const application = createStandaloneApplication({
   googleApiKey: import.meta.env.GOOGLE_MAPS_API_KEY,

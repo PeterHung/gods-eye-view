@@ -1,6 +1,6 @@
 # God’s Eye View — macOS 一鍵部署
 
-以 [bilawalsidhu/gods-eye-view](https://github.com/bilawalsidhu/gods-eye-view) 為基礎，保留上游程式碼，加入 macOS 一鍵部署、啟動、停止與移除腳本，以及繁體中文分析與操作文件。
+以 [bilawalsidhu/gods-eye-view](https://github.com/bilawalsidhu/gods-eye-view) 為基礎，以獨立介面翻譯模組擴充上游程式，加入 macOS 一鍵部署、啟動、停止與移除腳本，以及繁體中文分析與操作文件。
 
 ## 快速開始
 
@@ -26,6 +26,8 @@ cd gods-eye-view
 
 ## 網頁功能與部署範圍
 
+本機網頁右上角提供「繁體中文／English」切換，主要面板、圖層狀態、導覽及金鑰設定會即時切換並記住選擇。首次使用依瀏覽器語言決定預設值；地名、航班代碼、HUD 遙測及來源資料保留原文。
+
 本機網頁可操作地球、圖層與 Provider Settings。已實測基本影像、重設地球、USGS 地震圖層及 API 金鑰設定面板；未驗證需金鑰的語音、船舶或擬真 3D。
 
 服務只監聽 `127.0.0.1:4173`。啟動使用上游 Vite 本機模式，以保留網頁金鑰編輯功能；這不是公網部署。關閉終端機不會停止服務，登出或重開機後需再次啟動。搬動資料夾前請先停止服務。
@@ -39,7 +41,7 @@ cd gods-eye-view
 
 ## 來源與授權
 
-`source/` 是上游 commit `0d41b6be5490db1f10a171f238be75db4d4ec3b4` 的原始碼快照，未修改上游程式。本儲存庫以新提交匯入快照，沒有包含上游完整 Git 歷史。新增的管理腳本同樣以 MIT 授權提供。
+`source/` 是上游 commit `0d41b6be5490db1f10a171f238be75db4d4ec3b4` 的原始碼快照，再加入繁體中文／英文介面切換。本儲存庫以新提交匯入快照，沒有包含上游完整 Git 歷史。新增的管理腳本同樣以 MIT 授權提供。
 
 原始碼與第三方資料／模型授權不同；請保留 [LICENSE](LICENSE)、[資料來源說明](source/DATA_SOURCES.md) 與模型來源資訊。第三方資料不因上傳此儲存庫而改採 MIT，部分附帶素材有非商用限制。
 

@@ -1,0 +1,61 @@
+/* Keep the language controls clear of the title and camera toolbar. */
+#interface-language {
+  position: fixed;
+  top: 78px;
+  right: 24px;
+  z-index: 10020;
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid rgba(95, 220, 240, 0.3);
+  border-radius: 9px;
+  background: rgba(6, 17, 23, 0.94);
+  backdrop-filter: blur(12px);
+}
+#interface-language button {
+  min-height: 34px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: #bdcbd2;
+  font:
+    500 14px/1.4 Inter,
+    'PingFang TC',
+    'Microsoft JhengHei',
+    sans-serif;
+  cursor: pointer;
+}
+#interface-language button[aria-pressed='true'] {
+  color: #91f4ff;
+  background: rgba(40, 160, 186, 0.18);
+  border-color: rgba(95, 220, 240, 0.45);
+}
+#interface-language button:hover {
+  color: white;
+}
+#interface-language button:focus-visible {
+  outline: 2px solid #91f4ff;
+  outline-offset: 2px;
+}
+html[lang='zh-TW'] .panel-title,
+html[lang='zh-TW'] .dock-tray-toggle,
+html[lang='zh-TW'] #first-run-launcher,
+html[lang='zh-TW'] #key-setup,
+html[lang='zh-TW'] .layer-group-heading {
+  letter-spacing: 0.06em;
+  font-family: Inter, 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+}
+@media (max-width: 720px) {
+  #interface-language {
+    top: 58px;
+    right: 16px;
+  }
+  #left-panel-stack {
+    top: 112px;
+  }
+  #interface-language button {
+    min-height: 36px;
+    padding: 4px 8px;
+  }
+}
