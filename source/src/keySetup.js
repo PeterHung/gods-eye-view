@@ -178,7 +178,7 @@ function ensureKeySetupMarkup(documentRef) {
     chip = documentRef.createElement('button');
     chip.id = 'key-setup-chip';
     chip.type = 'button';
-    chip.hidden = true;
+    chip.hidden = false;
     chip.setAttribute('aria-haspopup', 'dialog');
     chip.setAttribute('aria-controls', 'key-setup');
     const icon = documentRef.createElement('span');

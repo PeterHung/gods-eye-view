@@ -422,3 +422,17 @@ test('creates settings markup when the template is missing from the document', a
   assert.equal(nodes['key-setup-chip'].label.textContent, 'PROVIDER SETTINGS');
   controller.destroy();
 });
+
+
+test('page entry creates settings before application startup', async () => {
+  const main = await import('node:fs').then((fs) =>
+    fs.readFileSync(new URL('./main.js', import.meta.url), 'utf8'),
+  );
+  assert.match(main, /import { initKeySetup } from '.\/keySetup.js';/);
+  assert.match(main, /const providerSettings = initKeySetup\(\);/);
+  assert.ok(
+    main.indexOf('const providerSettings = initKeySetup()') <
+      main.indexOf('application.start()'),
+    'settings must start before the globe application',
+  );
+});
