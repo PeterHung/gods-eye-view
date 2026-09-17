@@ -1,0 +1,10 @@
+{
+  "analysis_date": "2026-09-17",
+  "repository": "https://github.com/bilawalsidhu/gods-eye-view",
+  "commit": "0d41b6be5490db1f10a171f238be75db4d4ec3b4",
+  "video": "https://youtu.be/tlEnf7P7wDA",
+  "model_family": "gpt-6",
+  "model_variant": "not supplied in context",
+  "reasoning_effort": "unspecified in context",
+  "verification": "Source review and limited test attempt; no installed dependencies or runtime acceptance"
+}
