@@ -18,21 +18,13 @@ export function installInterfaceLanguage(doc = document, win = window) {
   let language = resolveLanguage(saved, win.navigator.language);
   const texts = new WeakMap();
   const attributes = new WeakMap();
-  const switcher = doc.createElement('div');
+  const switcher = doc.createElement('button');
   switcher.id = 'interface-language';
-  switcher.setAttribute('role', 'group');
+  switcher.type = 'button';
   switcher.dataset.noI18n = '';
-  switcher.setAttribute('aria-label', '介面語言 / Interface language');
-  const buttons = ['zh-TW', 'en'].map((locale) => {
-    const button = doc.createElement('button');
-    button.type = 'button';
-    button.lang = locale;
-    button.textContent = locale === 'zh-TW' ? '繁體中文' : 'English';
-    button.dataset.language = locale;
-    button.addEventListener('click', () => setLanguage(locale));
-    switcher.append(button);
-    return button;
-  });
+  switcher.addEventListener('click', () =>
+    setLanguage(language === 'zh-TW' ? 'en' : 'zh-TW'),
+  );
   doc.querySelector('#top-center-actions').append(switcher);
 
   function localizeText(node) {
@@ -84,11 +76,14 @@ export function installInterfaceLanguage(doc = document, win = window) {
   function setLanguage(next) {
     language = next;
     doc.documentElement.lang = language;
-    for (const button of buttons)
-      button.setAttribute(
-        'aria-pressed',
-        String(button.dataset.language === language),
-      );
+    switcher.textContent = language === 'zh-TW' ? '中' : 'EN';
+    switcher.lang = language;
+    const label =
+      language === 'zh-TW'
+        ? '目前：繁體中文；切換為 English'
+        : 'Current: English; switch to 繁體中文';
+    switcher.setAttribute('aria-label', label);
+    switcher.title = label;
     try {
       win.localStorage.setItem(LANGUAGE_KEY, language);
     } catch {

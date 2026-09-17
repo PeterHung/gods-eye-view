@@ -1,46 +1,18 @@
-/* Anchor language selection directly after the globe reset control. */
+/* Use the same circular glass control as the adjacent globe action. */
 #interface-language {
   position: absolute;
-  left: calc(100% + 12px);
-  top: 50%;
-  transform: translateY(-50%);
-  white-space: nowrap;
-  display: flex;
-  gap: 3px;
-  padding: 4px;
-  border: 1px solid rgba(95, 220, 240, 0.3);
-  border-radius: 9px;
-  background: rgba(6, 17, 23, 0.94);
-  backdrop-filter: blur(12px);
-}
-#interface-language button {
-  width: auto;
-  height: 34px;
-  min-height: 34px;
-  padding: 5px 10px;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  background: transparent;
-  color: #bdcbd2;
+  left: calc(100% + 8px);
+  top: 0;
   font:
-    500 14px/1.4 Inter,
+    600 12px/1 Inter,
     'PingFang TC',
     'Microsoft JhengHei',
     sans-serif;
-  cursor: pointer;
+  letter-spacing: 0;
 }
-#interface-language button[aria-pressed='true'] {
-  color: #91f4ff;
-  background: rgba(40, 160, 186, 0.18);
-  border-color: rgba(95, 220, 240, 0.45);
-}
-#interface-language button:hover {
-  color: white;
-  transform: none;
-}
-#interface-language button:focus-visible {
-  outline: 2px solid #91f4ff;
-  outline-offset: 2px;
+#interface-language:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 html[lang='zh-TW'] .panel-title,
 html[lang='zh-TW'] .dock-tray-toggle,
@@ -52,21 +24,17 @@ html[lang='zh-TW'] .layer-group-heading {
 }
 @media (max-width: 720px) {
   #top-center-actions {
-    left: 64px;
+    left: 52px;
     right: 16px;
-    flex-wrap: wrap;
     justify-content: flex-end;
     align-items: center;
   }
   #interface-language {
     position: static;
-    transform: none;
   }
-  #left-panel-stack {
-    top: 112px;
-  }
-  #interface-language button {
-    min-height: 36px;
-    padding: 4px 8px;
+}
+@media (max-width: 360px) {
+  #top-center-actions {
+    gap: 6px;
   }
 }
