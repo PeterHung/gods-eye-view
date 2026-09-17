@@ -1,23 +1,34 @@
 import { createSurfaceKeyboard } from './ui/surfaceKeyboard.js';
+import { KEY_SETUP_KEYS } from './keySetupCore.mjs';
 
-/**
- * The POWER UP surface — paste a key, get a power.
- *
- * A small chip sits bottom-right whenever the app is running under the dev
- * server with keys still missing. It opens a dialog rendered ENTIRELY from
- * GET /api/setup/status (the registry lives in src/keySetupCore.mjs and this
- * module never duplicates it): one row per key, what it unlocks, where to get
- * it, and a paste field. SAVE posts to /api/setup/keys, which writes the
- * repo-root .env and restarts the dev server — Vite's client then reloads the
- * page itself, and the pasted key is simply *on*. No hand-edited env files.
- *
- * The surface self-destructs where it cannot work: a prod build (no endpoint)
- * or a LAN visitor (loopback-only endpoint) fails the status fetch, and both
- * the chip and the dialog are removed outright.
+/** Provider Settings stays reachable in local and deployed builds.
+ * Loopback dev servers allow editing. Other deployments show setup guidance
+ * without collecting credentials or enabling the local write endpoint.
  */
+export function setupApiUrl(baseUrl, route) {
+  return new URL(`./api/setup/${route}`, baseUrl).href;
+}
+
+export function readOnlyKeySetupStatus() {
+  return {
+    mode: 'read-only',
+    total: KEY_SETUP_KEYS.filter((key) => !key.hidden).length,
+    setCount: null,
+    keys: KEY_SETUP_KEYS.filter((key) => !key.hidden).map((key) => ({
+      ...key,
+      set: null,
+    })),
+  };
+}
+
+const DEPLOYED_DESCRIPTION =
+  'This deployment does not provide browser-based key editing. Ask the site administrator to configure the environment variables below on the hosting server. This page cannot verify whether those keys are configured.';
+const DEPLOYED_NOTE =
+  'Server keys require a backend. Google Maps and Cesium ion keys are included at build time; rebuild and redeploy after changing them. To edit keys on your own computer, use the local deployment script.';
 
 /** Chip label — pure, exported for tests. */
 export function keySetupChipLabel(status) {
+  if (status?.mode === 'read-only') return 'PROVIDER SETTINGS';
   const missing = Math.max(0, (status?.total || 0) - (status?.setCount || 0));
   return missing > 0
     ? `POWER UP · ${missing} ${missing === 1 ? 'KEY' : 'KEYS'} WAITING`
@@ -62,11 +73,11 @@ export function stripKeylessBasemapFromHash(hash) {
 const TIER_DOTS = Object.freeze({ metered: '🔴', free: '🟡' });
 
 /** Build one key row. All content is our own registry text, set via textContent. */
-function buildRow(documentRef, key) {
+function buildRow(documentRef, key, readOnly = false) {
   const row = documentRef.createElement('section');
   row.className = 'key-setup-row';
   row.dataset.keyId = key.id;
-  row.dataset.set = String(Boolean(key.set));
+  row.dataset.set = readOnly ? 'unknown' : String(Boolean(key.set));
   if (key.managed) row.dataset.managed = key.managed;
   const external = key.managed === 'external';
 
@@ -116,7 +127,12 @@ function buildRow(documentRef, key) {
   unlocks.textContent = key.unlocks;
 
   row.append(head, unlocks);
-  if (!external) {
+  if (readOnly) {
+    const names = documentRef.createElement('code');
+    names.className = 'key-setup-variable-names';
+    names.textContent = key.envVars.join(' · ');
+    row.append(names);
+  } else if (!external) {
     const fields = documentRef.createElement('div');
     fields.className = 'key-setup-fields';
     for (const envVar of key.envVars) {
@@ -149,7 +165,7 @@ function buildRow(documentRef, key) {
 
 /**
  * Wire the chip + dialog. Fire-and-forget from main.js; resolves to null when
- * the surface has no business existing (prod build, LAN visitor, no markup).
+ * the application was disposed or the required markup is absent.
  */
 export async function initKeySetup({
   documentRef = globalThis.document,
@@ -179,20 +195,37 @@ export async function initKeySetup({
   signal?.addEventListener('abort', destroy, { once: true });
   const doFetch = fetchImpl || globalThis.fetch?.bind(globalThis);
 
+  const baseUrl =
+    documentRef.baseURI || globalThis.location?.href || 'http://localhost/';
+  const statusUrl = setupApiUrl(baseUrl, 'status');
+  const keysUrl = setupApiUrl(baseUrl, 'keys');
   let status = null;
+  const request = new AbortController();
+  const abortRequest = () => request.abort();
+  lifetime.signal.addEventListener('abort', abortRequest, { once: true });
+  const timeout = globalThis.setTimeout(() => request.abort(), 5000);
   try {
-    const response = await doFetch('/api/setup/status', {
+    const response = await doFetch(statusUrl, {
       cache: 'no-store',
-      signal: lifetime.signal,
+      signal: request.signal,
     });
     if (!response.ok) throw new Error(String(response.status));
     status = await response.json();
     if (disposed) return null;
+    if (
+      !Array.isArray(status?.keys) ||
+      !Number.isInteger(status.total) ||
+      !Number.isInteger(status.setCount)
+    )
+      throw new Error('Invalid setup status');
   } catch {
-    // Prod build or non-loopback visitor: the surface cannot function, so it
-    // does not exist. (The README covers .env for headless/self-host setups.)
-    destroy();
-    return null;
+    if (disposed) return null;
+    // A missing API, login response, denied request or offline service must
+    // not silently remove the entry point or imply that no keys are set.
+    status = readOnlyKeySetupStatus();
+  } finally {
+    globalThis.clearTimeout(timeout);
+    lifetime.signal.removeEventListener('abort', abortRequest);
   }
 
   const rowsHost = root.querySelector('[data-key-setup-rows]');
@@ -200,6 +233,16 @@ export async function initKeySetup({
   const closeButton = root.querySelector('[data-key-setup-close]');
   const chipLabel = chip.querySelector('[data-key-setup-chip-label]') || chip;
   const statusLine = root.querySelector('[data-key-setup-status]');
+  const readOnly = status.mode === 'read-only';
+  if (readOnly) {
+    const description = root.querySelector('#key-setup-description');
+    if (description) description.textContent = DEPLOYED_DESCRIPTION;
+    if (statusLine) statusLine.textContent = DEPLOYED_NOTE;
+    if (applyButton) {
+      applyButton.hidden = true;
+      applyButton.disabled = true;
+    }
+  }
   const defaultStatusText = statusLine?.textContent || '';
   let busy = false;
   let open = false;
@@ -208,13 +251,12 @@ export async function initKeySetup({
     if (disposed) return;
     status = nextStatus;
     chipLabel.textContent = keySetupChipLabel(status);
-    // Fully powered is the owner's clean screen: the chip retires. The dialog
-    // stays reachable this session (and via ?setup=1) to swap or verify keys.
-    chip.hidden = status.setCount >= status.total;
+    // Keep settings discoverable even when all local keys are configured.
+    chip.hidden = false;
     if (!rowsHost) return;
     rowsHost.textContent = '';
     for (const key of status.keys || [])
-      rowsHost.append(buildRow(documentRef, key));
+      rowsHost.append(buildRow(documentRef, key, readOnly));
   };
 
   const visible = () =>
@@ -237,7 +279,9 @@ export async function initKeySetup({
     globalThis.requestAnimationFrame?.(() => {
       if (!open) return;
       root.classList.add('visible');
-      root.querySelector('input')?.focus?.({ preventScroll: true });
+      (root.querySelector('input') || closeButton)?.focus?.({
+        preventScroll: true,
+      });
     });
   };
 
@@ -264,7 +308,7 @@ export async function initKeySetup({
       : 'your local .env';
 
   const submitUpdates = async (updates, doneVerb) => {
-    if (disposed || busy) return;
+    if (disposed || busy || readOnly) return;
     const googleWasUnset = !status?.keys?.find(
       (key) => key.id === 'google-maps',
     )?.set;
@@ -272,7 +316,7 @@ export async function initKeySetup({
     applyButton?.setAttribute('aria-disabled', 'true');
     say('Saving…');
     try {
-      const response = await doFetch('/api/setup/keys', {
+      const response = await doFetch(keysUrl, {
         method: 'POST',
         signal: lifetime.signal,
         headers: { 'Content-Type': 'application/json' },
@@ -319,7 +363,7 @@ export async function initKeySetup({
   };
 
   const onApply = async () => {
-    if (disposed || busy) return;
+    if (disposed || busy || readOnly) return;
     const inputs = [...root.querySelectorAll('input[data-env-var]')];
     const updates = collectKeyUpdates(
       inputs.map((input) => ({
@@ -340,7 +384,7 @@ export async function initKeySetup({
   // Remove buttons are rendered per row; delegate so re-renders stay wired.
   rowsHost?.addEventListener('click', (event) => {
     const button = event.target?.closest?.('[data-key-setup-remove]');
-    if (disposed || !button || busy) return;
+    if (disposed || !button || busy || readOnly) return;
     let envVars = [];
     try {
       envVars = JSON.parse(button.dataset.keySetupRemove || '[]');
@@ -363,8 +407,7 @@ export async function initKeySetup({
 
   render(status);
 
-  // Re-entry for a fully-keyed setup, demos, and support: ?setup=1 opens the
-  // dialog even though the chip has retired.
+  // Direct entry for setup, demos and support.
   try {
     if (
       new URLSearchParams(globalThis.location?.search || '').get('setup') ===

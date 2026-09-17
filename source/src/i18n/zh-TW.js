@@ -61,6 +61,9 @@ Ready|就緒
 never|尚未更新
 just now|剛剛
 NO DATA|沒有資料
+PROVIDER SETTINGS|設定服務
+This deployment does not provide browser-based key editing. Ask the site administrator to configure the environment variables below on the hosting server. This page cannot verify whether those keys are configured.|此部署未提供網頁金鑰編輯功能。請由網站管理者在主機設定下列環境變數；此頁無法確認金鑰是否已設定。
+Server keys require a backend. Google Maps and Cesium ion keys are included at build time; rebuild and redeploy after changing them. To edit keys on your own computer, use the local deployment script.|服務端金鑰需要後端服務。Google Maps 與 Cesium ion 金鑰會在建置時加入，變更後請重新建置並部署。如需在自己的電腦編輯金鑰，請使用本機部署腳本。
 POWER UP|設定服務
 POWERED UP|服務已設定
 GROUND STATION · PROVIDER SETTINGS|控制台 · 服務設定
