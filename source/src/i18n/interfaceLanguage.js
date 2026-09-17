@@ -18,8 +18,9 @@ export function installInterfaceLanguage(doc = document, win = window) {
   let language = resolveLanguage(saved, win.navigator.language);
   const texts = new WeakMap();
   const attributes = new WeakMap();
-  const switcher = doc.createElement('nav');
+  const switcher = doc.createElement('div');
   switcher.id = 'interface-language';
+  switcher.setAttribute('role', 'group');
   switcher.dataset.noI18n = '';
   switcher.setAttribute('aria-label', '介面語言 / Interface language');
   const buttons = ['zh-TW', 'en'].map((locale) => {
@@ -32,7 +33,7 @@ export function installInterfaceLanguage(doc = document, win = window) {
     switcher.append(button);
     return button;
   });
-  doc.body.append(switcher);
+  doc.querySelector('#top-center-actions').append(switcher);
 
   function localizeText(node) {
     if (node.parentElement?.closest(SKIP)) return;
